@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pointwise-Restart Data Integrity Pipeline</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f3f2ee;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6;  /* accounts   - blue   */
+  --series-2: #eb6834;  /* relations  - orange */
+  --series-3: #1baf7a;  /* transactions - aqua */
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --shadow: 0 1px 3px rgba(11,11,11,.08), 0 4px 14px rgba(11,11,11,.05);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232322;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #e66767;
+  --shadow: 0 1px 3px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; }
+body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+       background:var(--page); color:var(--ink); font-size:14px; line-height:1.45; }
+header { display:flex; align-items:center; gap:14px; padding:14px 22px;
+         background:var(--surface); border-bottom:1px solid var(--border);
+         position:sticky; top:0; z-index:20; }
+header h1 { font-size:16px; margin:0; font-weight:650; }
+.badge { font-size:12px; padding:3px 10px; border-radius:999px; border:1px solid var(--border);
+         background:var(--surface-2); color:var(--ink-2); font-weight:600; }
+.badge.crash { background:var(--critical); color:#fff; border-color:transparent; }
+.badge.pub { background:var(--good); color:#fff; border-color:transparent; }
+.spacer { flex:1; }
+main { max-width:1380px; margin:0 auto; padding:20px 22px 60px; }
+.grid { display:grid; gap:16px; }
+.cols-4 { grid-template-columns: repeat(4, 1fr); }
+.cols-2 { grid-template-columns: 1fr 1fr; }
+@media (max-width: 980px){ .cols-4{grid-template-columns:repeat(2,1fr)} .cols-2{grid-template-columns:1fr} }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:12px;
+        box-shadow:var(--shadow); padding:16px 18px; }
+.card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
+           margin:0 0 12px; font-weight:650; }
+.tile .num { font-size:30px; font-weight:700; }
+.tile .lbl { color:var(--ink-2); font-size:12.5px; margin-top:2px; }
+.tile .sub { font-size:12px; color:var(--muted); margin-top:4px; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+button, select { font:inherit; }
+button { border:1px solid var(--border); background:var(--surface-2); color:var(--ink);
+         border-radius:8px; padding:8px 14px; cursor:pointer; font-weight:600; }
+button:hover { border-color:var(--muted); }
+button.primary { background:var(--series-1); border-color:transparent; color:#fff; }
+button.danger { background:var(--critical); border-color:transparent; color:#fff; }
+button:disabled { opacity:.45; cursor:not-allowed; }
+.row-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+select { background:var(--surface-2); color:var(--ink); border:1px solid var(--border);
+         border-radius:8px; padding:8px 10px; }
+table { width:100%; border-collapse:collapse; font-size:12.5px; }
+th { text-align:left; color:var(--muted); font-weight:600; font-size:11.5px;
+     text-transform:uppercase; letter-spacing:.04em; padding:7px 8px;
+     border-bottom:1px solid var(--grid); position:sticky; top:0; background:var(--surface); }
+td { padding:6px 8px; border-bottom:1px solid var(--grid); vertical-align:top;
+     font-variant-numeric: tabular-nums; }
+tr:hover td { background:var(--surface-2); }
+.pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11.5px;
+        font-weight:650; color:#fff; white-space:nowrap; }
+.pill.VALID { background:var(--good); }
+.pill.QUARANTINED { background:var(--critical); }
+.pill.taint { background:var(--serious); color:#3a1400; }
+.code { font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:11.5px;
+        background:var(--surface-2); border:1px solid var(--border); border-radius:5px;
+        padding:1px 5px; }
+.tabs { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+.tabs button { background:transparent; border-radius:8px 8px 0 0; border-bottom:2px solid transparent; }
+.tabs button.active { border-bottom-color:var(--series-1); color:var(--series-1); }
+.scroll { max-height:420px; overflow:auto; border:1px solid var(--border); border-radius:10px; }
+#graph { width:100%; height:520px; border:1px solid var(--border); border-radius:10px;
+         background:var(--surface); }
+.legend { display:flex; gap:16px; flex-wrap:wrap; margin:10px 2px 4px; font-size:12.5px; color:var(--ink-2); }
+.legend .item { display:flex; align-items:center; gap:6px; }
+.sw { width:14px; height:14px; display:inline-block; border:1.5px solid var(--ink-2); }
+.sw.rect { border-radius:3px; } .sw.diamond { transform:rotate(45deg); } .sw.ellipse { border-radius:50%; }
+.toast { position:fixed; bottom:22px; right:22px; max-width:460px; z-index:50;
+         background:var(--ink); color:var(--page); padding:12px 16px; border-radius:10px;
+         box-shadow:var(--shadow); opacity:0; transform:translateY(8px); transition:.25s; font-size:13px; }
+.toast.show { opacity:1; transform:translateY(0); }
+.toast.err { background:var(--critical); color:#fff; }
+.chain-box { font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:12px;
+             background:var(--surface-2); border:1px solid var(--border); border-radius:8px;
+             padding:10px 12px; white-space:pre-wrap; }
+.muted { color:var(--muted); }
+.small { font-size:12px; }
+a.dl { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border-radius:8px;
+       border:1px solid var(--border); background:var(--surface-2); color:var(--ink);
+       text-decoration:none; font-weight:600; font-size:13px; }
+a.dl:hover { border-color:var(--series-1); }
+.kv { display:grid; grid-template-columns: 190px 1fr; gap:4px 12px; font-size:13px; }
+.kv .k { color:var(--muted); }
+input.cell-edit { width:100%; font:inherit; background:var(--surface); color:var(--ink);
+                  border:1px solid var(--series-1); border-radius:5px; padding:3px 5px; }
+.tag-fix { outline:2px solid var(--series-1); outline-offset:-2px; }
+.flex { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.log { font-family:ui-monospace, Menlo, monospace; font-size:11.5px; max-height:240px;
+       overflow:auto; background:var(--surface-2); border:1px solid var(--border);
+       border-radius:8px; padding:10px; white-space:pre-wrap; }
+.node-label { font-size:10.5px; fill:var(--ink); pointer-events:none; font-weight:600; }
+.edge-label { font-size:9.5px; fill:var(--muted); pointer-events:none; }
+.hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pointwise-Restart Pipeline</h1>
+  <span class="badge" id="stageBadge">—</span>
+  <span class="badge" id="policyBadge">policy: —</span>
+  <span class="spacer"></span>
+  <button id="themeToggle" title="toggle light/dark">◐ theme</button>
+</header>
+
+<main class="grid" style="gap:18px">
+
+  <!-- control deck -->
+  <section class="card">
+    <h2>Pipeline control — receiver · validator · publisher</h2>
+    <div class="row-actions">
+      <button id="btnValidate" class="primary">1 · Validate batch</button>
+      <label class="small muted">policy
+        <select id="policySelect">
+          <option value="retain_subset">retain referentially-closed subset</option>
+          <option value="reject_batch">reject whole batch</option>
+        </select>
+      </label>
+      <button id="btnPublish">2 · Publish release</button>
+      <span class="muted small">crash simulator:</span>
+      <button id="btnCrashPre" title="validation durable, process dies before publish starts">💥 crash after validate / before publish</button>
+      <button id="btnCrashMid" title="files staged, atomic rename never happens">💥 crash during publish</button>
+      <button id="btnResume">♻️ Resume / restart</button>
+    </div>
+    <p class="small muted" style="margin-bottom:0;margin-top:10px">
+      State is durably checkpointed in SQLite after every stage. A crash never loses validation
+      results; resume reuses them and only finishes the interrupted publish (idempotent).
+    </p>
+  </section>
+
+  <!-- stat tiles -->
+  <section class="grid cols-4" id="tiles"></section>
+
+  <div class="grid cols-2">
+    <!-- graph -->
+    <section class="card">
+      <h2>Propagation chains — click a node to trace its full dependency path</h2>
+      <div class="legend">
+        <span class="item"><span class="sw rect" style="background:var(--series-1)"></span>account</span>
+        <span class="item"><span class="sw diamond" style="background:var(--series-2)"></span>relationship</span>
+        <span class="item"><span class="sw ellipse" style="background:var(--series-3)"></span>transaction</span>
+        <span class="item"><span class="dot" style="background:var(--critical)"></span>root-cause (intrinsic error)</span>
+        <span class="item"><span class="dot" style="background:var(--serious)"></span>tainted via dependency</span>
+        <span class="item"><span class="dot" style="background:var(--good)"></span>valid</span>
+      </div>
+      <svg id="graph" role="img" aria-label="Dependency and taint propagation graph"></svg>
+      <div id="chainDetail" class="chain-box hidden" style="margin-top:10px"></div>
+    </section>
+
+    <!-- replay + fix -->
+    <section class="card">
+      <h2>Pointwise fix &amp; minimal replay</h2>
+      <p class="small muted" style="margin-top:0">Fix one row below (or in the table). Only that row and its
+        transitive dependents are re-validated; unchanged rows are served from the content-hash cache.</p>
+      <div class="flex" style="margin-bottom:10px">
+        <select id="fixTable">
+          <option value="accounts">accounts</option>
+          <option value="relationships">relationships</option>
+          <option value="transactions">transactions</option>
+        </select>
+        <select id="fixLine"></select>
+      </div>
+      <div id="fixForm" class="grid" style="gap:8px"></div>
+      <div class="flex" style="margin-top:12px">
+        <button id="btnApplyFix" class="primary">Apply fix &amp; replay affected</button>
+        <button id="btnResetFix">Reset working copy</button>
+      </div>
+      <div id="replayInfo" class="small" style="margin-top:12px"></div>
+    </section>
+  </div>
+
+  <!-- row browser -->
+  <section class="card">
+    <h2>Row-level findings — every exclusion carries a reason and a remediation</h2>
+    <div class="flex" style="margin-bottom:12px">
+      <input id="queryKey" placeholder="query by key, e.g. ACC-1002 / T-1001 / REL-1009"
+             style="flex:1;min-width:260px;font:inherit;background:var(--surface);color:var(--ink);
+                    border:1px solid var(--border);border-radius:8px;padding:8px 12px">
+      <button id="btnQuery">Query row &amp; impact</button>
+    </div>
+    <div id="queryResult" class="chain-box hidden" style="margin-bottom:14px"></div>
+    <div class="tabs" id="tableTabs"></div>
+    <div class="scroll">
+      <table id="rowTable"><thead></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <div class="grid cols-2">
+    <!-- downloads -->
+    <section class="card">
+      <h2>Download center — published releases &amp; quarantine bundles</h2>
+      <p class="small muted" style="margin-top:0">Each zip contains the three CSVs, a manifest and
+        <span class="code">CHECKSUMS.sha256</span>. Verify independently with
+        <span class="code">python -I src/cli.py verify &lt;release-dir&gt;</span>.</p>
+      <div id="downloads" class="grid" style="gap:8px"></div>
+    </section>
+
+    <!-- handback -->
+    <section class="card">
+      <h2>Handback manifest — what was removed and how to re-ingest</h2>
+      <div class="flex" style="margin-bottom:10px">
+        <select id="manifestVersion"></select>
+        <select id="manifestKind">
+          <option value="release">release manifest</option>
+          <option value="quarantine">quarantine handback</option>
+        </select>
+        <button id="btnLoadManifest">Load</button>
+      </div>
+      <pre id="manifestView" class="log">No release published yet.</pre>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Event log</h2>
+    <div id="eventLog" class="log"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const ENTITY_COLOR = {accounts:"var(--series-1)", relationships:"var(--series-2)", transactions:"var(--series-3)"};
+const TABLE_LABEL = {accounts:"accounts", relationships:"relationships", transactions:"transactions"};
+let state = {validation:null, status:null, currentTable:"accounts", selectedNode:null, fixOriginal:null};
+
+/* ------------------------------------------------------------ utilities */
+function toast(msg, isErr=false){
+  const t = $("#toast"); t.textContent = msg; t.className = "toast show" + (isErr?" err":"");
+  setTimeout(()=>t.className="toast", 4200);
+}
+function log(msg){
+  const el = $("#eventLog");
+  el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+  el.scrollTop = el.scrollHeight;
+}
+async function api(path, opts={}){
+  const res = await fetch(path, {headers:{"Content-Type":"application/json"}, ...opts});
+  const data = await res.json();
+  if(!res.ok || data.error) throw new Error(data.detail || data.error || "API error");
+  return data;
+}
+function pill(row){
+  if(row.status === "VALID") return `<span class="pill VALID">✓ valid</span>`;
+  if(row.taint_path && row.taint_path.length)
+    return `<span class="pill QUARANTINED">✕ quarantined</span> <span class="pill taint">tainted</span>`;
+  return `<span class="pill QUARANTINED">✕ quarantined</span>`;
+}
+
+/* ------------------------------------------------------------ status */
+async function refreshStatus(){
+  state.status = await api("/api/status");
+  const b = $("#stageBadge");
+  b.textContent = "stage: " + state.status.stage;
+  b.className = "badge" + (state.status.stage.startsWith("CRASHED") ? " crash"
+                : state.status.stage === "PUBLISHED" ? " pub" : "");
+  $("#policyBadge").textContent = "policy: " + (state.status.policy || "—");
+  renderDownloads();
+  renderManifestVersions();
+}
+
+/* ------------------------------------------------------------ tiles */
+function renderTiles(){
+  const v = state.validation;
+  const el = $("#tiles");
+  if(!v){ el.innerHTML = ""; return; }
+  const s = v.stats;
+  const tiles = [
+    {n:s.total_rows, l:"total rows received", sub:"3 tables, checksummed at receive"},
+    {n:s.error_findings, l:"intrinsic error findings", sub:"field-level / duplicate / missing FK", c:"var(--critical)"},
+    {n:s.taint_findings, l:"rows tainted by dependency", sub:"well-formed rows excluded by closure", c:"var(--serious)"},
+    {n:s.missing_references, l:"dangling references", sub:"would become orphan sources", c:"var(--warning)"},
+  ];
+  el.innerHTML = tiles.map(t=>`
+    <div class="card tile">
+      <div class="num" style="color:${t.c||"var(--ink)"}">${t.n}</div>
+      <div class="lbl">${t.l}</div><div class="sub">${t.sub}</div>
+    </div>`).join("") +
+    Object.entries(s.per_table).map(([table,p])=>`
+    <div class="card tile">
+      <div class="num"><span class="dot" style="background:${ENTITY_COLOR[table]}"></span>${p.valid}<span class="muted" style="font-size:16px"> / ${p.total}</span></div>
+      <div class="lbl">${TABLE_LABEL[table]} publishable</div>
+      <div class="sub">${p.intrinsic_bad} intrinsic · ${p.tainted} tainted</div>
+    </div>`).join("");
+}
+
+/* ------------------------------------------------------------ graph (SVG) */
+const SVGNS = "http://www.w3.org/2000/svg";
+function el(name, attrs={}, parent){
+  const node = document.createElementNS(SVGNS, name);
+  for(const [k,v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if(parent) parent.appendChild(node);
+  return node;
+}
+function buildGraphModel(v){
+  // nodes keyed by table:line; edges from dependency references
+  const nodes = [], nodeMap = new Map();
+  for(const table of ["accounts","relationships","transactions"]){
+    for(const r of v.rows[table]){
+      const n = {id:`${table}:${r.line_no}`, table, line:r.line_no, key:r.key,
+                 status:r.status, taint:r.taint_path, codes:r.intrinsic_codes, row:r};
+      nodes.push(n); nodeMap.set(n.id, n);
+    }
+  }
+  const edges = [];
+  const refCols = {
+    relationships:[["source_account_id","accounts"],["target_account_id","accounts"]],
+    transactions:[["from_account_id","accounts"],["to_account_id","accounts"],
+                  ["via_relationship_id","relationships"]]
+  };
+  for(const table of ["relationships","transactions"]){
+    for(const r of v.rows[table]){
+      for(const [col,target] of refCols[table]){
+        const val = r.values[col];
+        if(!val) continue;
+        const tgt = nodes.find(n=>n.table===target && n.key===val);
+        if(tgt) edges.push({from:tgt.id, to:`${table}:${r.line_no}`, label:col});
+      }
+    }
+  }
+  return {nodes, edges, nodeMap};
+}
+function renderGraph(){
+  const svg = $("#graph"); svg.innerHTML = "";
+  const v = state.validation;
+  if(!v){ svg.innerHTML = `<text x="20" y="40" class="node-label">Run validation to render the propagation graph.</text>`; return; }
+  const model = buildGraphModel(v);
+  const W = svg.clientWidth || 640, H = 520;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  // layered layout: accounts x=col0, relationships col1, transactions col2
+  const cols = {accounts:0, relationships:1, transactions:2};
+  const colW = W/3, rowsByCol = {0:[],1:[],2:[]};
+  model.nodes.forEach(n=>rowsByCol[cols[n.table]].push(n));
+  for(const c of [0,1,2]){
+    const arr = rowsByCol[c], gap = H/(arr.length+1);
+    arr.forEach((n,i)=>{ n.x = colW*c + 70; n.y = gap*(i+1); });
+  }
+  // marker
+  const defs = el("defs",{},svg);
+  const marker = el("marker",{id:"arrow",viewBox:"0 0 10 10",refX:9,refY:5,
+    markerWidth:7,markerHeight:7,orient:"auto-start-reverse"},defs);
+  el("path",{d:"M 0 0 L 10 5 L 0 10 z",fill:"var(--muted)"},marker);
+
+  // edges (only edges touching a problem node get emphasis; dim others)
+  const problemIds = new Set(model.nodes.filter(n=>n.status!=="VALID").map(n=>n.id));
+  const edgeLayer = el("g",{},svg);
+  for(const e of model.edges){
+    const a = model.nodeMap.get(e.from), b = model.nodeMap.get(e.to);
+    const hot = problemIds.has(a.id) || problemIds.has(b.id);
+    el("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y, stroke: hot?"var(--serious)":"var(--grid)",
+      "stroke-width": hot?2:1, "marker-end":"url(#arrow)", opacity: hot?0.95:0.7}, edgeLayer);
+  }
+  // nodes
+  const nodeLayer = el("g",{},svg);
+  for(const n of model.nodes){
+    const g = el("g",{cursor:"pointer"},nodeLayer);
+    g.addEventListener("click", ()=>selectNode(n));
+    const fill = n.status === "VALID" ? "var(--good)"
+      : (n.taint && n.taint.length) ? "var(--serious)" : "var(--critical)";
+    const shape = n.table==="accounts" ? "rect" : n.table==="relationships" ? "diamond" : "ellipse";
+    const stroke = state.selectedNode===n.id ? "var(--ink)" : "var(--border)";
+    if(shape==="rect")
+      el("rect",{x:n.x-34,y:n.y-15,width:68,height:30,rx:6,fill:"var(--surface)",
+        stroke:fill,"stroke-width":3},g);
+    else if(shape==="diamond")
+      el("polygon",{points:`${n.x},${n.y-17} ${n.x+36},${n.y} ${n.x},${n.y+17} ${n.x-36},${n.y}`,
+        fill:"var(--surface)", stroke:fill, "stroke-width":3},g);
+    else
+      el("ellipse",{cx:n.x,cy:n.y,rx:36,ry:16,fill:"var(--surface)",
+        stroke:fill,"stroke-width":3},g);
+    const label = el("text",{x:n.x,y:n.y+3.5,"text-anchor":"middle",class:"node-label"},g);
+    label.textContent = (n.key||"<no-key>").replace("ACC-","A").replace("REL-","R").replace("T-","T");
+    el("title",{},g).textContent = `${n.table} line ${n.line} · ${n.key||"<missing key>"}\n`+
+      `status: ${n.status}${n.codes.length?"\ncodes: "+n.codes.join(", "):""}`;
+  }
+  window.__graphModel = model;
+}
+function selectNode(n){
+  state.selectedNode = n.id;
+  renderGraph();
+  const box = $("#chainDetail");
+  box.classList.remove("hidden");
+  if(n.status==="VALID"){
+    box.textContent = `✓ ${n.id} (${n.key}) — valid; no exclusion chain.`;
+    return;
+  }
+  if(n.taint && n.taint.length){
+    box.textContent = "Dependency path (root → this row):\n" + n.taint.map((c,i)=>
+      `${"  ".repeat(i)}${i===0?"⚡ ROOT":"↳ VIA "} ${c.table}:${c.key||"<missing-key>"} (line ${c.line_no})${c.edge?"  ["+c.edge+"]":""}`).join("\n");
+  } else {
+    box.textContent = `⚡ ROOT CAUSE ${n.id} (${n.key})\nintrinsic codes: ${n.codes.join(", ")}\n`+
+      `All rows referencing this key are transitively quarantined until it is fixed.`;
+  }
+}
+
+/* ------------------------------------------------------------ table browser */
+function renderTabs(){
+  const tabs = $("#tableTabs");
+  tabs.innerHTML = ["accounts","relationships","transactions"].map(t=>
+    `<button data-t="${t}" class="${t===state.currentTable?"active":""}">${t}</button>`).join("");
+  tabs.querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{
+    state.currentTable = b.dataset.t; renderTabs(); renderTable(); populateFixPicker();
+  }));
+}
+function renderTable(){
+  const v = state.validation; if(!v) return;
+  const rows = v.rows[state.currentTable];
+  const cols = Object.keys(rows[0]?.values || {});
+  $("#rowTable").querySelector("thead").innerHTML =
+    `<tr><th>line</th><th>status</th><th>${cols.join("</th><th>")}</th><th>codes / chain</th></tr>`;
+  const tb = $("#rowTable").querySelector("tbody");
+  tb.innerHTML = rows.map(r=>{
+    const chain = r.taint_path && r.taint_path.length
+      ? r.taint_path.map(c=>`${c.table}:${c.key||"∅"}`).join(" → ")
+      : r.intrinsic_codes.map(c=>`<span class="code">${c}</span>`).join(" ");
+    return `<tr data-line="${r.line_no}">
+      <td>${r.line_no}</td><td>${pill(r)}</td>
+      ${cols.map(c=>`<td>${r.values[c]??""}</td>`).join("")}
+      <td class="small">${chain}</td></tr>`;
+  }).join("");
+  tb.querySelectorAll("tr").forEach(tr=>tr.addEventListener("click",()=>{
+    $("#fixTable").value = state.currentTable;
+    $("#fixLine").value = tr.dataset.line;
+    populateFixForm();
+    document.querySelector("#fixForm").scrollIntoView({behavior:"smooth", block:"center"});
+  }));
+}
+
+/* ------------------------------------------------------------ fix form */
+function populateFixPicker(){
+  const v = state.validation; if(!v) return;
+  const sel = $("#fixLine");
+  sel.innerHTML = v.rows[$("#fixTable").value].map(r=>
+    `<option value="${r.line_no}">L${r.line_no} · ${r.key||"<missing-key>"} · ${r.status}</option>`).join("");
+  populateFixForm();
+}
+function populateFixForm(){
+  const v = state.validation; if(!v) return;
+  const table = $("#fixTable").value, line = Number($("#fixLine").value);
+  const row = v.rows[table].find(r=>r.line_no===line);
+  state.fixOriginal = row;
+  $("#fixForm").innerHTML = Object.entries(row.values).map(([k,val])=>
+    `<label class="small muted flex" style="justify-content:space-between">${k}
+      <input class="cell-edit" data-col="${k}" value="${String(val).replaceAll('"',"&quot;")}" style="width:220px"></label>`).join("");
+}
+async function applyFix(){
+  const table = $("#fixTable").value, line = Number($("#fixLine").value);
+  const updates = {};
+  $("#fixForm").querySelectorAll("input").forEach(i=>{
+    const orig = state.fixOriginal.values[i.dataset.col] ?? "";
+    if(i.value !== orig) updates[i.dataset.col] = i.value;
+  });
+  if(!Object.keys(updates).length){ toast("No changed fields — nothing to replay."); return; }
+  log(`fix requested: ${table} L${line} ${JSON.stringify(updates)}`);
+  const data = await api("/api/fix",{method:"POST",
+    body:JSON.stringify({table, line_no:line, updates})});
+  log(`replay: ${data.replay.replay.replayed_count} rows re-validated, `+
+      `${data.replay.replay.reused_count} reused from cache, `+
+      `${data.replay.cache.misses.length} cache miss(es)`);
+  state.validation = data.replay;
+  renderTiles(); renderGraph(); renderTable(); populateFixPicker();
+  const rp = data.replay.replay;
+  $("#replayInfo").innerHTML =
+    `<div class="kv">
+      <div class="k">changed row</div><div>${rp.changed_rows.map(r=>`${r.table} L${r.line_no}`).join(", ")}</div>
+      <div class="k">replay scope</div><div>${rp.replayed_count} rows (transitive dependents)</div>
+      <div class="k">reused (cache hits)</div><div>${rp.reused_count} rows — not recomputed</div>
+      <div class="k">cache miss / recompute</div><div>${data.replay.cache.misses.length} content hash(es)</div>
+     </div>`;
+  toast(`Fix applied: ${rp.replayed_count} row(s) replayed, ${rp.reused_count} reused from cache.`);
+  await refreshStatus();
+}
+
+/* ------------------------------------------------------------ downloads */
+function renderDownloads(){
+  const el = $("#downloads");
+  const rels = state.status?.releases || [];
+  if(!rels.length){ el.innerHTML = `<p class="muted small">No releases yet — publish one.</p>`; return; }
+  el.innerHTML = rels.flatMap(r=>[
+    `<a class="dl" href="/api/download?file=release-v${r.version}.zip">⬇ release-v${r.version}.zip <span class="muted small">(${r.outcome})</span></a>`,
+    `<a class="dl" href="/api/download?file=quarantine-v${r.version}.zip">⬇ quarantine-v${r.version}.zip <span class="muted small">(handback)</span></a>`
+  ]).join("");
+}
+function renderManifestVersions(){
+  const rels = state.status?.releases || [];
+  const cur = $("#manifestVersion").value;
+  $("#manifestVersion").innerHTML = rels.map(r=>`<option value="${r.version}">v${r.version} — ${r.policy}</option>`).join("");
+  if(cur) $("#manifestVersion").value = cur;
+}
+async function loadManifest(){
+  const version = $("#manifestVersion").value;
+  if(!version){ toast("No version available."); return; }
+  const kind = $("#manifestKind").value;
+  const m = await api(`/api/manifest?version=${version}&kind=${kind}`);
+  $("#manifestView").textContent = JSON.stringify(m, null, 2);
+}
+
+/* ------------------------------------------------------------ wiring */
+$("#themeToggle").addEventListener("click",()=>{
+  const root = document.documentElement;
+  root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+});
+$("#btnValidate").addEventListener("click", async()=>{
+  log("validate: running field checks, duplicate/FK checks and taint fixpoint…");
+  state.validation = await api("/api/validate",{method:"POST"});
+  log(`validate done: ${state.validation.stats.error_findings} errors, `+
+      `${state.validation.stats.taint_findings} tainted rows`);
+  renderTiles(); renderGraph(); renderTable(); populateFixPicker(); await refreshStatus();
+  toast("Validation complete — see propagation graph and findings.");
+});
+$("#btnPublish").addEventListener("click", async()=>{
+  const policy = $("#policySelect").value;
+  log(`publish: policy=${policy}`);
+  const out = await api("/api/publish",{method:"POST",body:JSON.stringify({policy})});
+  log(`published v${out.version}`);
+  toast(`Release v${out.version} published atomically.`);
+  await refreshStatus(); await loadLatestManifestSafe();
+});
+$("#btnCrashPre").addEventListener("click", async()=>{
+  const policy = $("#policySelect").value;
+  log("CRASH SIMULATED: after validation, before publish");
+  await api("/api/publish",{method:"POST",body:JSON.stringify({policy, crash:"pre_publish"})});
+  await refreshStatus();
+  toast("💥 Simulated crash (pre-publish). State is durable — press Resume.", true);
+});
+$("#btnCrashMid").addEventListener("click", async()=>{
+  const policy = $("#policySelect").value;
+  log("CRASH SIMULATED: during publish (staged, commit rename never ran)");
+  await api("/api/publish",{method:"POST",body:JSON.stringify({policy, crash:"mid_publish"})});
+  await refreshStatus();
+  toast("💥 Simulated crash (mid-publish). Staged content awaits idempotent resume.", true);
+});
+$("#btnResume").addEventListener("click", async()=>{
+  const out = await api("/api/resume",{method:"POST"});
+  log("resume: " + (out.recovered_from ? `recovered from ${out.recovered_from}` : out.note));
+  toast(out.recovered_from ? `♻️ Recovered from ${out.recovered_from} — release v${out.version} committed.` : out.note);
+  await refreshStatus(); await loadLatestManifestSafe();
+});
+$("#btnApplyFix").addEventListener("click",()=>applyFix().catch(e=>{toast(e.message,true); log("ERROR "+e.message);}));
+$("#btnResetFix").addEventListener("click", async()=>{
+  try{
+    const out = await api("/api/rereceive",{method:"POST"});
+    log("rereceive: working copy restored from source ("+
+        Object.values(out.rows).reduce((a,b)=>a+b,0)+" rows)");
+    state.validation = await api("/api/validation");
+    renderTiles(); renderGraph(); renderTable(); populateFixPicker();
+    toast("Working copy reset to immutable source CSVs; releases retained.");
+  }catch(e){ toast(e.message, true); }
+});
+$("#btnQuery").addEventListener("click", ()=>runQuery().catch(e=>toast(e.message,true)));
+$("#queryKey").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#btnQuery").click(); });
+async function runQuery(){
+  const key = $("#queryKey").value.trim();
+  if(!key){ toast("Enter a row key to query."); return; }
+  const data = await api("/api/query?key="+encodeURIComponent(key));
+  const box = $("#queryResult");
+  box.classList.remove("hidden");
+  if(!data.found){
+    box.textContent = "✕ no row found with key '"+key+"' in any table.";
+    return;
+  }
+  box.textContent = data.matches.map(m=>{
+    const head = `${m.table} L${m.line_no} · ${m.key} — ${m.status}`;
+    const codes = m.intrinsic_codes.length ? "\n  error codes: "+m.intrinsic_codes.join(", ") : "";
+    const chain = m.taint_path.length ? "\n  taint chain: "+
+      m.taint_path.map(c=>`${c.table}:${c.key||"<missing-key>"}(L${c.line_no})`).join(" → ") : "";
+    const closure = "\n  fix impact ("+m.reverse_closure_count+" rows re-validated if changed): "+
+      m.reverse_closure.map(c=>`${c.table}:${c.key||"<∅>"}#L${c.line_no}`).join(", ");
+    return head + codes + chain + closure;
+  }).join("\n\n");
+  log("query '"+key+"': "+data.matches.length+" match(es)");
+}
+$("#fixTable").addEventListener("change", populateFixPicker);
+$("#fixLine").addEventListener("change", populateFixForm);
+$("#btnLoadManifest").addEventListener("click",()=>loadManifest().catch(e=>toast(e.message,true)));
+window.addEventListener("resize", renderGraph);
+
+async function loadLatestManifestSafe(){
+  const rels = state.status?.releases || [];
+  if(!rels.length) return;
+  $("#manifestVersion").value = String(rels[rels.length-1].version);
+  try{ await loadManifest(); }catch(e){/* ignore */}
+}
+(async function init(){
+  renderTabs();
+  try{
+    await refreshStatus();
+    state.validation = await api("/api/validation");
+    renderTiles(); renderGraph(); renderTable(); populateFixPicker();
+    log("loaded existing batch state");
+  }catch(e){ log("no validation yet: "+e.message); }
+})();
+</script>
+</body>
+</html>

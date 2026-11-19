@@ -1,0 +1,14 @@
+account_id,account_holder,currency,balance,status,country
+ACC-1001,Ada Lovelace,USD,12500.00,ACTIVE,US
+ACC-1002,Alan Turing,GBP,-875.50,ACTIVE,GB
+ACC-1003,Grace Hopper,USD,4200.75,ACTIVE,US
+ACC-1004,Linus Torvalds,EUR,980.10,SUSPENDED,FI
+ACC-1005,Katherine Johnson,USD,15320.00,ACTIVE,US
+ACC-1006,Margaret Hamilton,USD,760.25,ACTIVE,US
+ACC-1007,Dennis Ritchie,USD,3100.00,CLOSED,US
+ACC-1008,Edsger Dijkstra,XBT,540.60,ACTIVE,NL
+ACC-1009,Barbara Liskov,USD,2280.40,ACTIVE,US
+ACC-1010,Donald Knuth,USD,9900.99,ACTIVE,US
+ACC-1011,Ken Thompson,USD,610.30,ACTIVE,US
+ACC-1011,Ken Thompson,USD,610.30,ACTIVE,US
+,Orphan Record,USD,100.00,ACTIVE,US
